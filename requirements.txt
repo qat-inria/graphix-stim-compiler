@@ -1,2 +1,2 @@
-graphix @ git+https://github.com/matulni/graphix.git@circuit-extraction
+graphix
 stim>=1.15,<2

@@ -6,7 +6,7 @@ import networkx as nx
 import numpy as np
 import pytest
 import stim
-from graphix.circ_ext.extraction import PauliString
+from graphix.circ_ext.extraction import CliffordMap, PauliString
 from graphix.fundamentals import Axis, Sign
 from graphix.measurements import Measurement
 from graphix.opengraph import OpenGraph
@@ -14,7 +14,13 @@ from graphix.parameter import Placeholder
 from graphix.random_objects import rand_circuit
 from numpy.random import Generator
 
-from graphix_stim_compiler import cm_stim_pass, pauli_string_to_stim
+from graphix_stim_compiler import (
+    cm_stim_pass,
+    cm_to_stim_tableau,
+    pauli_string_to_stim,
+    stim_tableau_to_cm,
+    stim_to_pauli_string,
+)
 
 if TYPE_CHECKING:
     from numpy.random import PCG64
@@ -27,6 +33,129 @@ class TestStimCliffordPass:
         stim_str = pauli_string_to_stim(p_str, n_qubits=7)
 
         assert stim_str == stim.PauliString("-_XY_XZ_")
+
+    @pytest.mark.parametrize(
+        "ps_stim",
+        [
+            stim.PauliString("+_XZY_"),
+            stim.PauliString("+_XY_X"),
+            stim.PauliString("-ZZZ"),
+            stim.PauliString("+XY_Z"),
+            stim.PauliString("-___"),
+            stim.PauliString("+X"),
+        ],
+    )
+    def test_full_pauli_string_conversion(self, ps_stim: stim.PauliString) -> None:
+        ps, n = stim_to_pauli_string(ps_stim)
+        ps_stim_test = pauli_string_to_stim(ps, n)
+        assert ps_stim == ps_stim_test
+
+    @pytest.mark.parametrize(
+        ("t_stim", "cm_ref"),
+        [
+            (
+                stim.Tableau.from_conjugated_generators(
+                    xs=[
+                        stim.PauliString("+Z_"),
+                        stim.PauliString("+_Y"),
+                    ],
+                    zs=[
+                        stim.PauliString("-XY"),
+                        stim.PauliString("+ZZ"),
+                    ],
+                ),
+                CliffordMap(
+                    x_map={0: PauliString({0: Axis.Z}), 1: PauliString({1: Axis.Y})},
+                    z_map={0: PauliString({0: Axis.X, 1: Axis.Y}, Sign.MINUS), 1: PauliString({0: Axis.Z, 1: Axis.Z})},
+                    input_nodes=[0, 1],
+                    output_nodes=[0, 1],
+                ),
+            ),
+            (
+                stim.Tableau.from_conjugated_generators(
+                    xs=[
+                        stim.PauliString("+Z__"),
+                        stim.PauliString("+_X_"),
+                        stim.PauliString("+__Y"),
+                    ],
+                    zs=[
+                        stim.PauliString("+XX_"),
+                        stim.PauliString("+ZZ_"),
+                        stim.PauliString("+__Z"),
+                    ],
+                ),
+                CliffordMap(
+                    x_map={0: PauliString({0: Axis.Z}), 1: PauliString({1: Axis.X}), 2: PauliString({2: Axis.Y})},
+                    z_map={
+                        0: PauliString({0: Axis.X, 1: Axis.X}),
+                        1: PauliString({0: Axis.Z, 1: Axis.Z}),
+                        2: PauliString({2: Axis.Z}),
+                    },
+                    input_nodes=[0, 1, 2],
+                    output_nodes=[0, 1, 2],
+                ),
+            ),
+        ],
+    )
+    def test_stim_tableau_to_cm(self, t_stim: stim.Tableau, cm_ref: CliffordMap) -> None:
+        cm = stim_tableau_to_cm(t_stim)
+        assert cm.input_nodes == cm_ref.input_nodes
+        assert cm.output_nodes == cm_ref.output_nodes
+        assert cm.x_map == cm_ref.x_map
+        assert cm.z_map == cm_ref.z_map
+
+    @pytest.mark.parametrize(
+        "t_stim",
+        [
+            stim.Tableau.from_conjugated_generators(
+                xs=[
+                    stim.PauliString("+YYX"),
+                    stim.PauliString("+Y__"),
+                    stim.PauliString("+Y_X"),
+                ],
+                zs=[
+                    stim.PauliString("-_X_"),
+                    stim.PauliString("-X_Z"),
+                    stim.PauliString("+YXY"),
+                ],
+            ),
+            stim.Tableau.from_conjugated_generators(
+                xs=[
+                    stim.PauliString("+YYZY"),
+                    stim.PauliString("-XZYZ"),
+                    stim.PauliString("+ZY_Z"),
+                    stim.PauliString("-X_XY"),
+                ],
+                zs=[
+                    stim.PauliString("+Z_Z_"),
+                    stim.PauliString("+Y_XX"),
+                    stim.PauliString("-_XZZ"),
+                    stim.PauliString("+YZX_"),
+                ],
+            ),
+            stim.Tableau.from_conjugated_generators(
+                xs=[
+                    stim.PauliString("+XZZXZ"),
+                    stim.PauliString("-XXXX_"),
+                    stim.PauliString("+ZX_YY"),
+                    stim.PauliString("+ZXXZZ"),
+                    stim.PauliString("+_YXZY"),
+                ],
+                zs=[
+                    stim.PauliString("-XX_X_"),
+                    stim.PauliString("-XYYZX"),
+                    stim.PauliString("+YZ_XY"),
+                    stim.PauliString("-__X_Y"),
+                    stim.PauliString("+Z_XYY"),
+                ],
+            ),
+        ],
+    )
+    def test_full_cm_conversion(self, t_stim: stim.Tableau) -> None:
+        cm = stim_tableau_to_cm(t_stim)
+        t_stim_test = cm_to_stim_tableau(cm)
+
+        assert t_stim == t_stim_test
 
 
 class TestExtraction:
